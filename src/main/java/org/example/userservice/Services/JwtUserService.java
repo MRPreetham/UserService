@@ -1,5 +1,7 @@
 package org.example.userservice.Services;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import org.example.userservice.Dtos.SendEmailEventDto;
 import org.example.userservice.Exceptions.InvalidCredentialException;
 import org.example.userservice.Exceptions.InvalidTokenException;
 import org.example.userservice.Exceptions.UserExistException;
@@ -8,8 +10,10 @@ import org.example.userservice.Models.User;
 import org.example.userservice.Repositories.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.Optional;
 
@@ -18,11 +22,20 @@ import java.util.Optional;
 public class JwtUserService implements UserService{
     private UserRepository userRepository;
     private BCryptPasswordEncoder bCryptPasswordEncoder;
+    private KafkaTemplate<String,String> kafkaTemplate;
+    private SendEmailEventDto emailEventDto;
+    private ObjectMapper objectMapper;
     @Autowired
     public JwtUserService(UserRepository userRepository,
-                          BCryptPasswordEncoder bCryptPasswordEncoder){
+                          BCryptPasswordEncoder bCryptPasswordEncoder,
+                          KafkaTemplate<String,String> kafkaTemplate,
+                          SendEmailEventDto emailEventDto,
+                          ObjectMapper objectMapper){
         this.userRepository = userRepository;
         this.bCryptPasswordEncoder = bCryptPasswordEncoder;
+        this.kafkaTemplate = kafkaTemplate;
+        this.emailEventDto = emailEventDto;
+        this.objectMapper = objectMapper;
     }
     @Override
     public String login(String email, String password)
@@ -49,6 +62,17 @@ public class JwtUserService implements UserService{
         user.setEmail(email);
         user.setPassword(bCryptPasswordEncoder.encode(password));
         user.setUsername(username);
-        return userRepository.save(user);
+        User savedUser = userRepository.save(user);
+        emailEventDto.setTo("ppreetham156@gmail.com");
+        emailEventDto.setFrom("mrpreetham8@gmail.com");
+        emailEventDto.setSubject("Welcome to EmailService");
+        emailEventDto.setBody("Hello Preetham");
+        try {
+            kafkaTemplate.send("sendEmail",
+                    objectMapper.writeValueAsString(emailEventDto));
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+        return savedUser;
     }
 }
